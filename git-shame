@@ -72,13 +72,6 @@ def get_editor(commit, filepath, line_num):
         lines = subprocess.check_output(["git", "blame", filepath, commit]).splitlines()
         blame_cache[(commit, filepath)] = lines
     author = re.match(author_regex, lines[line_num-1]).groups()[0].strip()
-    '''
-    if len(author) > 30:
-        print "FAIL (probably): crappy regex was crappy.."
-        print line_num, len(lines)
-        print lines[line_num-1]
-        print "author", author
-    '''
     return author
 
 if __name__ == "__main__":
@@ -130,12 +123,3 @@ if __name__ == "__main__":
     
     for editor, bug_data in sorted(bugs.items(), key=lambda i: len(i[1])):
         print editor, ":", len(bug_data)
-        '''
-        i = 0
-        for bug_id, commit in bug_data:
-            print "\t%d @ %s" % (bug_id, commit)
-            if i > 4:
-                print "\t..."
-                break
-            i += 1
-        '''
