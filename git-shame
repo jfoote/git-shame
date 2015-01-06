@@ -3,7 +3,10 @@
 # Jonathan Foote
 # jmfoote@loyola.edu
 #
-# WARNING (2014-01-06): this code isn't tested yet
+# **** WARNING (2014-01-06) **** 
+# This code is untested
+# This idea may be crackheaded; this is just a toy
+# ********
 # 
 # A quick hack to play with the idea of figuring out who is
 # (somewhat) responsible for bugs in a codebase. Like so:
@@ -16,6 +19,7 @@ import subprocess, re, sys, os, json, difflib
 log_regex = re.compile("^commit([0-9a-z]{40})body(.*)$")
 partial_regex = re.compile("^.*Partial-Bug: #([\d]+).*$")
 close_regex = re.compile("^.*Closes-Bug: #([\d]+).*$")
+# ^^ recommended Gerritt bug-fix strings: 
 
 def get_edits(commit):
     '''
@@ -42,7 +46,7 @@ def get_edits(commit):
 
         # custom diff to get modified line numbers
         path, old_file, new_file = obj
-        i = 0
+        i = 1 # line counting starts at 1!
         lines = []
         for diff_out in difflib.ndiff(old_file.splitlines(), new_file.splitlines()):
             if (diff_out[:2] == "+ " or # new line in new file
@@ -77,6 +81,7 @@ except subprocess.CalledProcessError as e:
     sys.exit(e.returncode)
 
 bugs = {}
+bug_editors = {}
 i = 0
 # 1. Find a commit that has a bug fix
 for line in lines:
@@ -90,17 +95,35 @@ for line in lines:
             edits = get_edits(commit)
 
             # 3. Get names of people who edited those lines
+            bug_editors[bug_id] = []
             for filepath, mlines in edits.iteritems():
                 if not os.path.exists(filepath):
                     # file was deleted in commit?
                     continue
                 for mline in mlines:
                     editor = get_editor(commit+"^", filepath, mline)
-                    bugs[editor] = bugs.get(editor, []) + [bug_id]
+                    if editor not in bug_editors[bug_id]: # only count editor once per bug
+                        bugs[editor] = bugs.get(editor, []) + [(bug_id, commit)]
+                        bug_editors[bug_id].append(editor)
+                        '''
+                        # this describes each blame
+                        print "*" * 12
+                        print "bug %s fixed in %s: introduced by %s at %s:%s" % \
+                                (bug_id, commit, editor, filepath, mline)
+                        print "\t", body
+                        '''
     i += 1
     if i % 1000 == 0:
         print "%d/%d lines of history processed..." % (i, len(lines))
 
-for editor, bug_ids in sorted(bugs.items(), key=lambda i: len(i[1])):
-    print editor, ":", len(bug_ids)
-    print "\t%s..." % ", ".join(bug_ids[:5])
+for editor, bug_data in sorted(bugs.items(), key=lambda i: len(i[1])):
+    print editor, ":", len(bug_data)
+    '''
+    i = 0
+    for bug_id, commit in bug_data:
+        print "\t%d @ %s" % (bug_id, commit)
+        if i > 4:
+            print "\t..."
+            break
+        i += 1
+    '''
