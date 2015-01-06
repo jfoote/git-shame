@@ -16,11 +16,6 @@
 
 import subprocess, re, sys, os, json, difflib
 
-log_regex = re.compile("^commit([0-9a-z]{40})body(.*)$")
-partial_regex = re.compile("^.*Partial-Bug: #([\d]+).*$")
-close_regex = re.compile("^.*Closes-Bug: #([\d]+).*$")
-# ^^ recommended Gerritt bug-fix strings: 
-
 def get_edits(commit):
     '''
     Gets {filepath: [lines]} modified in commit
@@ -63,58 +58,74 @@ def get_edits(commit):
 
     return edits
 
-def get_editor(commit, filepath, line):
+blame_cache = {}
+author_regex = re.compile("^.*\(([^\)]*)[\d]{4}-[\d]{2}-[\d]{2}.*$")
+# ^^ first string the left of a date in parens ? :\
+def get_editor(commit, filepath, line_num):
     '''
-    Returns last editor of filepath in commit
+    Returns last editor of line at filepath in commit
     '''
-    out = subprocess.check_output(["git", "blame", "-p", "-L", 
-        "%s,%s" % (line, line), filepath, commit])
-    author = out.splitlines()[1][len("author "):]
-    #print "author", author
+
+    if (commit, filepath) in blame_cache.keys():
+        lines = blame_cache[(commit, filepath)]
+    else:
+        lines = subprocess.check_output(["git", "blame", filepath, commit]).splitlines()
+        blame_cache[(commit, filepath)] = lines
+    author = re.match(author_regex, lines[line_num-1]).groups()[0].strip()
+    '''
+    if len(author) > 30:
+        print "FAIL (probably): crappy regex was crappy.."
+        print line_num, len(lines)
+        print lines[line_num-1]
+        print "author", author
+    '''
     return author
 
 try:
-    lines = subprocess.check_output(["git", "log", "--all", "-M", "-C", 
-        "--format=commit%Hbody%B"] + sys.argv[1:]).splitlines()
+    commits = subprocess.check_output(["git", "log", "--all", "-M", "-C", 
+        "--format=%H"]).splitlines()
 except subprocess.CalledProcessError as e:
     sys.stderr.write(e.output)
     sys.exit(e.returncode)
+
+partial_regex = re.compile("^.*Partial-Bug: #([\d]+).*$")
+close_regex = re.compile("^.*Closes-Bug: #([\d]+).*$")
+# ^^ recommended Gerritt bug-fix strings: 
 
 bugs = {}
 bug_editors = {}
 i = 0
 # 1. Find a commit that has a bug fix
-for line in lines:
-    m = re.match(log_regex, line)
-    if m: # line is a commit
-        commit, body = m.groups()
-        m = re.match(close_regex, body)
-        if m: # commit closes a bug
-            bug_id = int(m.groups()[0])
-            # 2. Get files + lines that were changed in this fix
-            edits = get_edits(commit)
+for commit in commits:
+    body = subprocess.check_output(["git", "log", "-M", "-C", "-1", "-U", 
+        "--name-only", "--format=%B", commit]).replace("\n", " ")
+    m = re.match(close_regex, body)
+    if m: # commit closes a bug
+        bug_id = int(m.groups()[0])
+        # 2. Get files + lines that were changed in this fix
+        edits = get_edits(commit)
 
-            # 3. Get names of people who edited those lines
-            bug_editors[bug_id] = []
-            for filepath, mlines in edits.iteritems():
-                if not os.path.exists(filepath):
-                    # file was deleted in commit?
-                    continue
-                for mline in mlines:
-                    editor = get_editor(commit+"^", filepath, mline)
-                    if editor not in bug_editors[bug_id]: # only count editor once per bug
-                        bugs[editor] = bugs.get(editor, []) + [(bug_id, commit)]
-                        bug_editors[bug_id].append(editor)
-                        '''
-                        # this describes each blame
-                        print "*" * 12
-                        print "bug %s fixed in %s: introduced by %s at %s:%s" % \
-                                (bug_id, commit, editor, filepath, mline)
-                        print "\t", body
-                        '''
+        # 3. Get names of people who edited those lines
+        bug_editors[bug_id] = []
+        for filepath, mlines in edits.iteritems():
+            if not os.path.exists(filepath):
+                # file was deleted in commit?
+                continue
+            for mline in mlines:
+                editor = get_editor(commit+"^", filepath, mline)
+                if editor not in bug_editors[bug_id]: # only count editor once per bug
+                    bugs[editor] = bugs.get(editor, []) + [(bug_id, commit)]
+                    bug_editors[bug_id].append(editor)
+                    '''
+                    # this describes each blame
+                    print "*" * 12
+                    print "bug %s fixed in %s: introduced by %s at %s:%s" % \
+                            (bug_id, commit, editor, filepath, mline)
+                    print "\t", body
+                    '''
     i += 1
-    if i % 1000 == 0:
-        print "%d/%d lines of history processed..." % (i, len(lines))
+    if i % 100 == 0:
+        print "%d/%d commits processed..." % (i, len(commits))
 
 for editor, bug_data in sorted(bugs.items(), key=lambda i: len(i[1])):
     print editor, ":", len(bug_data)
