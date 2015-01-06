@@ -81,60 +81,61 @@ def get_editor(commit, filepath, line_num):
     '''
     return author
 
-try:
-    commits = subprocess.check_output(["git", "log", "--all", "-M", "-C", 
-        "--format=%H"]).splitlines()
-except subprocess.CalledProcessError as e:
-    sys.stderr.write(e.output)
-    sys.exit(e.returncode)
-
-partial_regex = re.compile("^.*Partial-Bug: #([\d]+).*$")
-close_regex = re.compile("^.*Closes-Bug: #([\d]+).*$")
-# ^^ recommended Gerritt bug-fix strings: 
-
-bugs = {}
-bug_editors = {}
-i = 0
-# 1. Find a commit that has a bug fix
-for commit in commits:
-    body = subprocess.check_output(["git", "log", "-M", "-C", "-1", "-U", 
-        "--name-only", "--format=%B", commit]).replace("\n", " ")
-    m = re.match(close_regex, body)
-    if m: # commit closes a bug
-        bug_id = int(m.groups()[0])
-        # 2. Get files + lines that were changed in this fix
-        edits = get_edits(commit)
-
-        # 3. Get names of people who edited those lines
-        bug_editors[bug_id] = []
-        for filepath, mlines in edits.iteritems():
-            if not os.path.exists(filepath) or os.path.isdir(filepath):
-                # file was deleted in commit?
-                continue
-            for mline in mlines:
-                editor = get_editor(commit+"^", filepath, mline)
-                if editor not in bug_editors[bug_id]: # only count editor once per bug
-                    bugs[editor] = bugs.get(editor, []) + [(bug_id, commit)]
-                    bug_editors[bug_id].append(editor)
-                    '''
-                    # this describes each blame
-                    print "*" * 12
-                    print "bug %s fixed in %s: introduced by %s at %s:%s" % \
-                            (bug_id, commit, editor, filepath, mline)
-                    print "\t", body
-                    '''
-    i += 1
-    if i % 100 == 0:
-        print "%d/%d commits processed..." % (i, len(commits))
-
-for editor, bug_data in sorted(bugs.items(), key=lambda i: len(i[1])):
-    print editor, ":", len(bug_data)
-    '''
+if __name__ == "__main__":
+    try:
+        commits = subprocess.check_output(["git", "log", "--all", "-M", "-C", 
+            "--format=%H"]).splitlines()
+    except subprocess.CalledProcessError as e:
+        sys.stderr.write(e.output)
+        sys.exit(e.returncode)
+    
+    partial_regex = re.compile("^.*Partial-Bug: #([\d]+).*$")
+    close_regex = re.compile("^.*Closes-Bug: #([\d]+).*$")
+    # ^^ recommended Gerritt bug-fix strings: 
+    
+    bugs = {}
+    bug_editors = {}
     i = 0
-    for bug_id, commit in bug_data:
-        print "\t%d @ %s" % (bug_id, commit)
-        if i > 4:
-            print "\t..."
-            break
+    # 1. Find a commit that has a bug fix
+    for commit in commits:
+        body = subprocess.check_output(["git", "log", "-M", "-C", "-1", "-U", 
+            "--name-only", "--format=%B", commit]).replace("\n", " ")
+        m = re.match(close_regex, body)
+        if m: # commit closes a bug
+            bug_id = int(m.groups()[0])
+            # 2. Get files + lines that were changed in this fix
+            edits = get_edits(commit)
+    
+            # 3. Get names of people who edited those lines
+            bug_editors[bug_id] = []
+            for filepath, mlines in edits.iteritems():
+                if not os.path.exists(filepath) or os.path.isdir(filepath):
+                    # file was deleted in commit?
+                    continue
+                for mline in mlines:
+                    editor = get_editor(commit+"^", filepath, mline)
+                    if editor not in bug_editors[bug_id]: # only count editor once per bug
+                        bugs[editor] = bugs.get(editor, []) + [(bug_id, commit)]
+                        bug_editors[bug_id].append(editor)
+                        '''
+                        # this describes each blame
+                        print "*" * 12
+                        print "bug %s fixed in %s: introduced by %s at %s:%s" % \
+                                (bug_id, commit, editor, filepath, mline)
+                        print "\t", body
+                        '''
         i += 1
-    '''
+        if i % 100 == 0:
+            print "%d/%d commits processed..." % (i, len(commits))
+    
+    for editor, bug_data in sorted(bugs.items(), key=lambda i: len(i[1])):
+        print editor, ":", len(bug_data)
+        '''
+        i = 0
+        for bug_id, commit in bug_data:
+            print "\t%d @ %s" % (bug_id, commit)
+            if i > 4:
+                print "\t..."
+                break
+            i += 1
+        '''
