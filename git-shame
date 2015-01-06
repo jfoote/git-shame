@@ -108,7 +108,7 @@ for commit in commits:
         # 3. Get names of people who edited those lines
         bug_editors[bug_id] = []
         for filepath, mlines in edits.iteritems():
-            if not os.path.exists(filepath):
+            if not os.path.exists(filepath) or os.path.isdir(filepath):
                 # file was deleted in commit?
                 continue
             for mline in mlines:
