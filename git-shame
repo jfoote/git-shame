@@ -1,0 +1,85 @@
+#!/usr/bin/env python
+# 
+
+import subprocess, re, sys, os, json, difflib
+
+log_regex = re.compile("^commit([0-9a-z]{40})body(.*)$")
+partial_regex = re.compile("^.*Partial-Bug: #([\d]+).*$")
+close_regex = re.compile("^.*Closes-Bug: #([\d]+).*$")
+
+print "ran"
+
+def get_edits(commit):
+    edits = {}
+
+    # get filepath, line_numbers that were changed with the bug fix
+    # via: diff bugfix commit with parent and use external diff hack to extract line numbers
+
+    # TODO: the python-based external diff hack below may break if a binary was modified 
+    env = os.environ
+    env["GIT_EXTERNAL_DIFF"] = "python -c 'import sys, json; print json.dumps([sys.argv[1], open(sys.argv[2]).read(), open(sys.argv[5]).read()])'"
+    cmd = ["git", "diff", commit + "^!"]
+    try:
+        # prints GIT_EXTERNAL_DIFF args as a json string
+        # path old-file old-hex old-mode new-file new-hex new-mode
+        out = subprocess.check_output(cmd, env=env)
+    except subprocess.CalledProcessError as e:
+        # diff returns non-zero regularly
+        out = e.output
+    for line in out.splitlines():
+        obj = json.loads(line) 
+
+        # custom diff to get modified line numbers
+        path, old_file, new_file = obj
+        i = 0
+        lines = []
+        for diff_out in difflib.ndiff(old_file.splitlines(), new_file.splitlines()):
+            if (diff_out[:2] == "+ " or # new line in new file
+                diff_out[:2] == "? "):  # helper line
+                # don't advance position in old file
+                continue
+            elif diff_out[:2] == "- ": # modified line in old file
+                lines.append(i)
+            i += 1
+
+        # store results 
+        if lines:
+            edits[path] = edits.get(path, []) + lines
+
+    return edits
+
+def get_editor(commit, filepath, line):
+    out = subprocess.check_output(["git", "blame", "-p", "-L", 
+        "%s,%s" % (line, line), filepath, commit])
+    author = out.splitlines()[1][len("author "):]
+    #print "author", author
+    return author
+
+
+try:
+    lines = subprocess.check_output(["git", "log", "--all", "-M", "-C", 
+        "--format=commit%Hbody%B"] + sys.argv[1:]).splitlines()
+except subprocess.CalledProcessError as e:
+    sys.stderr.write(e.output)
+    sys.exit(e.returncode)
+
+bug_counts = {}
+# 1. Find a commit that has a bug fix
+for line in lines:
+    m = re.match(log_regex, line)
+    if m: # line is a commit
+        commit, body = m.groups()
+        m = re.match(close_regex, body)
+        if m: # commit closes a bug
+            bug_id = int(m.groups()[0])
+            # 2. Get files + lines that were changed in this fix
+            edits = get_edits(commit)
+
+            # 3. Get names of people who edited those lines
+            for filepath, lines in edits.iteritems():
+                if not os.path.exists(filepath):
+                    # file was deleted in commit?
+                    continue
+                for line in lines:
+                    editor = get_editor(commit, filepath, line)
+                    bug_counts[editor] = bug_counts.get(editor, 0) + 1
