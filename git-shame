@@ -12,7 +12,7 @@
 # (somewhat) responsible for bugs in a codebase. Like so:
 # 1. Find commits with bug fix strings in them
 # 2. Figure out what files/lines the bug fix modified
-# 3. Determine how was the last person to modify those lines before the bug fix
+# 3. Determine who was the last person to modify those lines before the bug fix
 
 import subprocess, re, sys, os, json, difflib
 
