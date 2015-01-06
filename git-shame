@@ -1,5 +1,15 @@
 #!/usr/bin/env python
 # 
+# Jonathan Foote
+# jmfoote@loyola.edu
+#
+# WARNING (2014-01-06): this code isn't tested yet
+# 
+# A quick hack to play with the idea of figuring out who is
+# (somewhat) responsible for bugs in a codebase. Like so:
+# 1. Find commits with bug fix strings in them
+# 2. Figure out what files/lines the bug fix modified
+# 3. Determine how was the last person to modify those lines before the bug fix
 
 import subprocess, re, sys, os, json, difflib
 
@@ -7,9 +17,10 @@ log_regex = re.compile("^commit([0-9a-z]{40})body(.*)$")
 partial_regex = re.compile("^.*Partial-Bug: #([\d]+).*$")
 close_regex = re.compile("^.*Closes-Bug: #([\d]+).*$")
 
-print "ran"
-
 def get_edits(commit):
+    '''
+    Gets {filepath: [lines]} modified in commit
+    '''
     edits = {}
 
     # get filepath, line_numbers that were changed with the bug fix
@@ -49,12 +60,14 @@ def get_edits(commit):
     return edits
 
 def get_editor(commit, filepath, line):
+    '''
+    Returns last editor of filepath in commit
+    '''
     out = subprocess.check_output(["git", "blame", "-p", "-L", 
         "%s,%s" % (line, line), filepath, commit])
     author = out.splitlines()[1][len("author "):]
     #print "author", author
     return author
-
 
 try:
     lines = subprocess.check_output(["git", "log", "--all", "-M", "-C", 
@@ -63,7 +76,8 @@ except subprocess.CalledProcessError as e:
     sys.stderr.write(e.output)
     sys.exit(e.returncode)
 
-bug_counts = {}
+bugs = {}
+i = 0
 # 1. Find a commit that has a bug fix
 for line in lines:
     m = re.match(log_regex, line)
@@ -76,10 +90,17 @@ for line in lines:
             edits = get_edits(commit)
 
             # 3. Get names of people who edited those lines
-            for filepath, lines in edits.iteritems():
+            for filepath, mlines in edits.iteritems():
                 if not os.path.exists(filepath):
                     # file was deleted in commit?
                     continue
-                for line in lines:
-                    editor = get_editor(commit, filepath, line)
-                    bug_counts[editor] = bug_counts.get(editor, 0) + 1
+                for mline in mlines:
+                    editor = get_editor(commit+"^", filepath, mline)
+                    bugs[editor] = bugs.get(editor, []) + [bug_id]
+    i += 1
+    if i % 1000 == 0:
+        print "%d/%d lines of history processed..." % (i, len(lines))
+
+for editor, bug_ids in sorted(bugs.items(), key=lambda i: len(i[1])):
+    print editor, ":", len(bug_ids)
+    print "\t%s..." % ", ".join(bug_ids[:5])
