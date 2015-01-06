@@ -60,7 +60,7 @@ def get_edits(commit):
 
 blame_cache = {}
 author_regex = re.compile("^.*\(([^\)]*)[\d]{4}-[\d]{2}-[\d]{2}.*$")
-# ^^ first string the left of a date in parens ? :\
+# ^^ first string to the left of a date in parens ? :\
 def get_editor(commit, filepath, line_num):
     '''
     Returns last editor of line at filepath in commit
@@ -84,7 +84,7 @@ if __name__ == "__main__":
     
     partial_regex = re.compile("^.*Partial-Bug: #([\d]+).*$")
     close_regex = re.compile("^.*Closes-Bug: #([\d]+).*$")
-    # ^^ recommended Gerritt bug-fix strings: 
+    # ^^ recommended Gerritt bug-fix strings
     
     bugs = {}
     bug_editors = {}
