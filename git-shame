@@ -62,6 +62,22 @@ def get_edits(commit):
 
     return edits
 
+ins_regex = re.compile("^.*([\d]+) insertions.*$")
+del_regex = re.compile("^.*([\d]+) deletions.*$")
+def get_change_count(author):
+    # 3 files changed, 14 insertions(+), 7 deletions(-)
+    lines = subprocess.check_output(["git", "log", '--author=%s' % author, "--oneline", "--shortstat"]).splitlines()
+    changes = 0
+    for line in lines:
+        m = re.match(ins_regex, line)
+        if m:
+            changes += int(m.groups()[0])
+        m = re.match(del_regex, line)
+        if m:
+            changes += int(m.groups()[0])
+    print "changes", changes
+    return changes
+
 blame_cache = {}
 author_regex = re.compile("^.*\(([^\)]*)[\d]{4}-[\d]{2}-[\d]{2}.*$")
 # ^^ first string to the left of a date in parens ? :\
@@ -125,6 +141,8 @@ if __name__ == "__main__":
         i += 1
         if i % 100 == 0:
             print "%d/%d commits processed..." % (i, len(commits))
+            if i == 1000:
+                break
     
     for editor, bug_data in sorted(bugs.items(), key=lambda i: len(i[1])):
-        print editor, ":", len(bug_data)
+        print "%s bugs:%d total-changes:%d" % (editor, len(bug_data), get_change_count(editor))
